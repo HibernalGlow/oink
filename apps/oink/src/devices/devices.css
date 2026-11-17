@@ -25,9 +25,17 @@
   width: 100%; min-width: 0; min-height: 60px; margin: 0; padding: 10px 12px 10px 10px;   
   border: 0; border-radius: calc(12px * var(--ok-rk)); corner-shape: var(--ok-corner); --ok-shape: var(--ok-corner);
   background: transparent; color: var(--ok-text-2); text-align: left; cursor: pointer;
-  transition: color var(--ok-dur-2) var(--ok-ease-out), background-color var(--ok-dur-2) var(--ok-ease-out);
+  transition: color var(--ok-dur-2) var(--ok-ease-out), background-color var(--ok-dur-2) var(--ok-ease-out), border-radius var(--md-spatial-fast), transform var(--md-spatial-fast);
 }
-@media (hover: hover) { .dev:hover { color: var(--ok-text); } }
+@media (hover: hover) {
+  .dev:hover {
+    color: var(--ok-text);
+    border-radius: 18px 18px 6px 18px;
+    background-color: color-mix(in srgb, var(--ok-well-hi) 65%, transparent);
+    transform: translateY(-1px);
+  }
+}
+.dev:active { transform: scale(0.98); }
 
 .dev { position: relative; }
 
@@ -50,7 +58,12 @@
 }
 .dev:has(> .dev__hit:focus-visible)::after { opacity: 1; }
 
-.dev[data-current] { --dev-bg: var(--ok-well-hi); background: var(--ok-well-hi); color: var(--ok-text); }
+.dev[data-current] {
+  --dev-bg: var(--ok-well-hi);
+  background: var(--ok-well-hi);
+  color: var(--ok-text);
+  border-radius: 20px 20px 6px 20px;
+}
 
 .dev__os { position: relative; flex: none; display: grid; place-items: center; width: 24px; height: 24px; }
 
@@ -106,7 +119,7 @@
 .dev[data-group="offline"] .os-logo { color: var(--ok-text-3); }
 
 .dev__text { flex: 1; min-width: 0; display: grid; gap: 5px; }
-.dev__name { font: 600 13px/1.3 var(--ok-font); color: var(--ok-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dev__name { font: 750 13px/1.3 var(--ok-font); letter-spacing: -0.04em; color: var(--ok-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .dev[data-group="offline"] .dev__name { color: var(--ok-text-2); }
 
 .dev__meta { box-sizing: border-box; display: flex; align-items: center; gap: 10px; height: 26px; min-width: 0; white-space: nowrap; overflow: hidden; padding: 4px; margin: -4px; }

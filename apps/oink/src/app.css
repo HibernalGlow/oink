@@ -67,8 +67,10 @@ input::-ms-reveal, input::-ms-clear { display: none; }
   overflow: hidden;
   border-radius: var(--ok-r-5); corner-shape: var(--ok-corner); --ok-shape: var(--ok-corner);
   background:
-    radial-gradient(circle, var(--ok-line-2) 1px, transparent 1.5px) 0 0 / 22px 22px,
+    radial-gradient(circle, var(--ok-line-2) 1.2px, transparent 1.6px) 0 0 / 22px 22px,
     var(--ok-well);
+  box-shadow: inset 0 2px 8px color-mix(in srgb, var(--ok-text) 3%, transparent);
+  transition: background-color var(--md-effects);
 }
 .stage__closed {
   position: absolute; inset: 0 0 72px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--ok-s-2);
@@ -170,7 +172,7 @@ input::-ms-reveal, input::-ms-clear { display: none; }
 .win:not([data-active]) .win__lockup { opacity: .55; }
 .win__nav-back { display: flex; align-items: center; gap: 6px; align-self: flex-start; animation: nav-in var(--ok-spring-soft-dur) var(--ok-spring-soft) backwards; --from: 12px; }
 .win__nav-back .win__nav-toggle { margin-top: 14px; }
-.win__nav-title { margin: 14px 0 0; font: 600 14px/var(--ok-h-sm) var(--ok-font); color: var(--ok-text); white-space: nowrap; }
+.win__nav-title { margin: 14px 0 0; font: 750 14px/var(--ok-h-sm) var(--ok-font); letter-spacing: -0.04em; color: var(--ok-text); white-space: nowrap; }
 .win:not([data-active]) .win__nav-title { color: var(--ok-text-2); }
 .win-caps { display: flex; align-self: stretch; margin-left: auto; }
 .win-cap {
@@ -265,7 +267,7 @@ input::-ms-reveal, input::-ms-clear { display: none; }
 }
 .win__title-center[data-shown] { opacity: 1; transform: translate(-50%, -50%); transition: opacity var(--ok-dur-2) var(--ok-ease-out), transform var(--ok-spring-dur) var(--ok-spring); }
 .win[data-platform="win"] .win__title-center { top: 24px; }
-.win__paused { display: flex; align-items: center; gap: 6px; font: 600 13px/1 var(--ok-font); color: var(--ok-text); white-space: nowrap; }
+.win__paused { display: flex; align-items: center; gap: 6px; font: 750 13px/1 var(--ok-font); letter-spacing: -0.03em; color: var(--ok-text); white-space: nowrap; }
 .win__paused svg { flex: none; width: 16px; height: 16px; }
 .win__paused circle { fill: var(--ok-danger); }
 .win__paused path { fill: none; stroke: #fff; stroke-width: 1.7; stroke-linecap: round; }
@@ -284,13 +286,20 @@ input::-ms-reveal, input::-ms-clear { display: none; }
 
 .upgrade { animation: ok-pop var(--ok-spring-dur) var(--ok-spring) both; }
 
-.ok-btn.upgrade--pill { --_h: 26px; min-width: 64px; padding: 0 var(--ok-s-3); font-size: 12.5px; font-weight: 600; }
+.ok-btn.upgrade--pill {
+  --_h: 26px; min-width: 64px; padding: 0 var(--ok-s-3); font-size: 12.5px; font-weight: 750; letter-spacing: -0.03em;
+  border-radius: 999px; transition: border-radius var(--md-spatial-fast), transform var(--md-spatial-fast);
+}
+.ok-btn.upgrade--pill:hover { border-radius: 14px; transform: scale(1.02); }
 .upgrade--bar {
   position: relative; display: inline-flex; align-items: center; justify-content: center; min-width: 64px; height: 26px; padding: 0 var(--ok-s-3);
   overflow: hidden; outline: none; appearance: none; border: 0; cursor: pointer;
   border-radius: var(--ok-r-full); corner-shape: round; --ok-shape: round; background: var(--ok-well);
-  color: var(--ok-text); font: 600 12.5px/1 var(--ok-font); font-variant-numeric: tabular-nums; white-space: nowrap;
+  color: var(--ok-text); font: 750 12.5px/1 var(--ok-font); font-variant-numeric: tabular-nums; letter-spacing: -0.03em; white-space: nowrap;
+  transition: border-radius var(--md-spatial-fast), transform var(--md-spatial-fast);
 }
+.upgrade--bar:hover { border-radius: 14px; transform: scale(1.02); }
+.upgrade--bar:active { border-radius: 8px; transform: scale(0.97); }
 .upgrade--bar:focus-visible { box-shadow: 0 0 0 2px var(--ok-surface), 0 0 0 4px var(--ok-accent); }
 
 /* Progress drawn as the control's own background: an accent layer clipped to
@@ -572,7 +581,13 @@ input::-ms-reveal, input::-ms-clear { display: none; }
 
 
 
-.win:not(.about) { z-index: 2; }
+.win:not(.about) {
+  z-index: 2;
+  box-shadow: 0 16px 44px -12px color-mix(in srgb, var(--ok-text) 14%, transparent), 0 2px 6px color-mix(in srgb, var(--ok-text) 6%, transparent);
+}
+:root[data-theme="dark"] .win:not(.about) {
+  box-shadow: 0 24px 56px -12px rgba(0, 0, 0, 0.65), 0 4px 12px rgba(0, 0, 0, 0.4);
+}
 .win.about { z-index: 1; box-shadow: 0 18px 50px rgb(20 22 30 / .16), 0 2px 8px rgb(20 22 30 / .08); }
 .win.about[data-front] { z-index: 3; }
 .about__bar { cursor: default; touch-action: none; }

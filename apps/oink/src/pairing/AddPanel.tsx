@@ -4,7 +4,7 @@ import type { ReactNode } from 'react';
 import { Button, Dialog, Dots, Icon, Tooltip, VisuallyHidden, speed, useBusy } from 'oink-ui';
 import type { DialogProps } from 'oink-ui';
 import { OsLogo } from '../devices/icons';
-import { formatAddress } from './data';
+import { formatAddress, detectSightingSource } from './data';
 import { agent, useAgent } from '../api/store';
 import type { IncomingRequest, Peer } from './data';
 import type { Pairing } from './usePairing';
@@ -151,15 +151,27 @@ export function FoldItem({ phase, children }: {
       <div className="addp__item-in">{children}</div>
     </li>);
 }
-export function PeerInfo({ peer, sub, mark }: {
+export function SightingBadge({ source, ip }: { source?: number; ip?: string }) {
+    const kind = detectSightingSource(ip, source);
+    const label = kind === 'tailscale' ? 'Tailscale' : kind === 'bluetooth' ? 'BT PAN' : 'LAN';
+    const title = kind === 'tailscale' ? 'Tailscale' : kind === 'bluetooth' ? 'Bluetooth PAN' : 'LAN';
+    return (<span className="sighting-badge" data-source={kind} title={title} aria-label={title}>
+      {label}
+    </span>);
+}
+export function PeerInfo({ peer, sub, mark, badge }: {
     peer: Peer;
     sub: ReactNode;
     mark?: ReactNode;
+    badge?: ReactNode;
 }) {
     return (<>
       <span className="dev__os"><OsLogo os={peer.os}/>{mark}</span>
       <span className="dev__text">
-        <span className="dev__name">{peer.name}</span>
+        <span className="dev__name-row">
+          <span className="dev__name">{peer.name}</span>
+          {badge}
+        </span>
         <span className="peer__sub">{sub}</span>
       </span>
     </>);
@@ -209,7 +221,11 @@ export function NearbyRow({ peer, onConnect, sub, ctx = false }: {
             busy.run(r).catch(() => { });
     };
     return (<div className="peer" data-ctx={ctx ? `nearby:${peer.id}` : undefined} data-incompatible={!peer.compatible || undefined}>
-      <PeerInfo peer={peer} sub={!peer.compatible ? peer.problem ?? tr('协议版本不兼容') : sub ?? formatAddress(peer)}/>
+      <PeerInfo
+        peer={peer}
+        badge={<SightingBadge source={peer.source} ip={peer.ip}/>}
+        sub={!peer.compatible ? peer.problem ?? tr('协议版本不兼容') : sub ?? formatAddress(peer)}
+      />
       <span className="peer__actions">
         <Button size="sm" iconOnly className="peer__btn" disabled={!peer.compatible} aria-label={tr('连接 {0}', peer.name)} {...busy.buttonProps} statusLabels={{ loading: tr('正在连接 {0}', peer.name), success: tr('已连接'), error: tr('连接失败') }} onClick={connect}>
           <Icon name="plus"/>

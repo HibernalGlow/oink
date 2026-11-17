@@ -1,6 +1,7 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import 'oink-ui/styles.css';
+import './styles/md3-expressive.css';
 import './app.css';
 import { App } from './App';
 import { agent, start } from './api/store';

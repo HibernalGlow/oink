@@ -89,7 +89,7 @@ export function usePairing(activeWindow = true) {
   },[state.pairingEvents,activeWindow,localDevice]);
   const blocked:Peer[]=state.blocked?.entries.map(b=>({compatible:null,id:b.device,device:b.device,deviceId:fingerprint(b.device),name:b.name??fingerprint(b.device),os:b.os==='macos'?'mac':b.os==='windows'?'win':b.os==='linux'?'linux':'other',ip:'',port:DEFAULT_PORT}))??[];
   const members=new Set(state.cards?.cards.map(card=>card.device));
-  const nearby:Peer[]=state.nearby?.rows.filter(peer=>!members.has(peer.device)).map(p=>({compatible:p.compatible,problem:p.problem?pairProblemText(p.problem):p.compatible?undefined:tr('协议版本不兼容'),id:p.device,device:p.device,name:p.name,os:p.os==='macos'?'mac':p.os==='windows'?'win':p.os==='linux'?'linux':'other',deviceId:fingerprint(p.device),ip:addressText(p.selected),port:p.selected.port}))??[];
+  const nearby:Peer[]=state.nearby?.rows.filter(peer=>!members.has(peer.device)).map(p=>({compatible:p.compatible,problem:p.problem?pairProblemText(p.problem):p.compatible?undefined:tr('协议版本不兼容'),id:p.device,device:p.device,name:p.name,os:p.os==='macos'?'mac':p.os==='windows'?'win':p.os==='linux'?'linux':'other',deviceId:fingerprint(p.device),ip:addressText(p.selected),port:p.selected.port,source:p.source}))??[];
   const requests:IncomingRequest[]=state.pairings?.requests.map(p=>({...presentPeer(p.peer),id:p.id,sourceCount:p.source_count??null,targetCount:p.target_count,revision:p.revision}))??[];
   // Returning from onboarding hides the code entry without rejecting the request.
   // The live accepted session remains resumable from the regular sidebar.
