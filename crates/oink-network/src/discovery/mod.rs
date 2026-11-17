@@ -4,6 +4,7 @@
 use oink_foundation::{DeviceId, GroupId};
 use std::collections::HashMap;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::net::UdpSocket;
@@ -12,6 +13,12 @@ use tokio::sync::{mpsc, oneshot, watch};
 mod builtin;
 #[cfg(target_os = "macos")]
 mod dnssd;
+
+pub mod tailscale;
+pub use tailscale::{TailscaleDiscovery, TailscaleError, is_tailscale};
+
+pub mod pan;
+pub use pan::{is_bluetooth_pan, is_pan_interface_name};
 
 mod advert;
 pub use advert::{Advert, ProtocolOffer};
@@ -27,6 +34,8 @@ pub enum Source {
     Beacon,
     Mdns,
     Manual,
+    Tailscale,
+    BluetoothPan,
 }
 
 /// 发现到的一台设备。
@@ -89,12 +98,15 @@ pub fn local_ipv4() -> Vec<(Ipv4Addr, Option<Ipv4Addr>)> {
             continue;
         }
         if let if_addrs::IfAddr::V4(v4) = i.addr {
-            // 169.254/16 也保留：两台电脑用网线直连时就是这种地址。
-            let bcast = v4.broadcast.or_else(|| {
-                let ip = u32::from(v4.ip);
-                let mask = u32::from(v4.netmask);
-                (mask != 0).then(|| Ipv4Addr::from(ip | !mask))
-            });
+            // 169.254/16 也保留：两台电脑用网线直连或蓝牙 PAN 直连时就是这种地址。
+            let bcast = v4
+                .broadcast
+                .or_else(|| {
+                    let ip = u32::from(v4.ip);
+                    let mask = u32::from(v4.netmask);
+                    (mask != 0 && mask != u32::MAX).then(|| Ipv4Addr::from(ip | !mask))
+                })
+                .or_else(|| pan::pan_broadcast(v4.ip, v4.netmask));
             out.push((v4.ip, bcast));
         }
     }
@@ -113,6 +125,7 @@ pub struct DiscoveryConfig {
     /// 广播到这些端口（默认只有正式发现端口与本机发现端口）。
     pub beacon_ports: Vec<u16>,
     pub mdns: MdnsMode,
+    pub tailscale: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -130,9 +143,14 @@ type Pending = Arc<Mutex<HashMap<[u8; 16], oneshot::Sender<(Advert, SocketAddr)>
 pub struct Discovery {
     socket: Mutex<Option<Arc<UdpSocket>>>,
     pending: Pending,
+    extra_targets: Arc<Mutex<Vec<SocketAddr>>>,
     refresh: mpsc::UnboundedSender<()>,
+    tailscale_refresh: Option<mpsc::UnboundedSender<()>>,
     mdns: Mutex<Option<MdnsHandle>>,
     task: tokio::sync::Mutex<Option<tokio::task::JoinHandle<()>>>,
+    tailscale_task: tokio::sync::Mutex<Option<tokio::task::JoinHandle<()>>>,
+    tailscale_enabled: Arc<AtomicBool>,
+    pan_enabled: Arc<AtomicBool>,
 }
 
 impl std::fmt::Debug for Discovery {
@@ -219,6 +237,33 @@ impl Discovery {
                 .map(MdnsHandle::Builtin),
         };
 
+        let tailscale_enabled = Arc::new(AtomicBool::new(cfg.tailscale));
+        let pan_enabled = Arc::new(AtomicBool::new(true));
+
+        let (tailscale_refresh, tailscale_task) = if socket.is_some() {
+            let (tx, rx) = mpsc::unbounded_channel();
+            let socket = socket.as_ref().unwrap().clone();
+            let pending = pending.clone();
+            let extra = extra_targets.clone();
+            let out = out.clone();
+            let discovery_port = cfg.port;
+            let ts_discovery = tailscale::TailscaleDiscovery::new();
+            let handle = tokio::spawn(run_tailscale(
+                ts_discovery,
+                discovery_port,
+                socket,
+                pending,
+                extra,
+                out,
+                rx,
+                tailscale_enabled.clone(),
+            ));
+            (Some(tx), Some(handle))
+        } else {
+            (None, None)
+        };
+
+        let pan_enabled_clone = pan_enabled.clone();
         let task = socket.as_ref().map(|socket| {
             tokio::spawn(run(
                 cfg,
@@ -228,14 +273,20 @@ impl Discovery {
                 pending.clone(),
                 extra_targets.clone(),
                 refresh_rx,
+                pan_enabled_clone,
             ))
         });
         Ok(Self {
             socket: Mutex::new(socket),
             pending,
+            extra_targets,
             refresh: refresh_tx,
+            tailscale_refresh,
             mdns: Mutex::new(mdns),
             task: tokio::sync::Mutex::new(task),
+            tailscale_task: tokio::sync::Mutex::new(tailscale_task),
+            tailscale_enabled,
+            pan_enabled,
         })
     }
 
@@ -248,12 +299,55 @@ impl Discovery {
             .ok()
     }
 
+    pub fn set_extra_targets(&self, targets: Vec<SocketAddr>) {
+        let mut extra = self.extra_targets.lock().unwrap_or_else(|e| e.into_inner());
+        *extra = targets;
+    }
+
+    pub fn extra_targets(&self) -> Vec<SocketAddr> {
+        self.extra_targets.lock().unwrap_or_else(|e| e.into_inner()).clone()
+    }
+
+    pub fn add_extra_target(&self, target: SocketAddr) {
+        let mut extra = self.extra_targets.lock().unwrap_or_else(|e| e.into_inner());
+        if !extra.contains(&target) {
+            extra.push(target);
+        }
+    }
+
+    pub fn set_tailscale(&self, enabled: bool) {
+        self.tailscale_enabled.store(enabled, Ordering::Release);
+        if enabled {
+            if let Some(ts) = &self.tailscale_refresh {
+                let _ = ts.send(());
+            }
+        }
+    }
+
+    pub fn is_tailscale_enabled(&self) -> bool {
+        self.tailscale_enabled.load(Ordering::Acquire)
+    }
+
+    pub fn set_bluetooth_pan(&self, enabled: bool) {
+        self.pan_enabled.store(enabled, Ordering::Release);
+        if enabled {
+            let _ = self.refresh.send(());
+        }
+    }
+
+    pub fn is_bluetooth_pan_enabled(&self) -> bool {
+        self.pan_enabled.load(Ordering::Acquire)
+    }
+
     /// 网络变化：立即重新广播、重新浏览。
     pub fn refresh(&self) {
         if let Some(m) = self.mdns.lock().unwrap_or_else(|e| e.into_inner()).as_ref() {
             m.refresh();
         }
         let _ = self.refresh.send(());
+        if let Some(ts) = &self.tailscale_refresh {
+            let _ = ts.send(());
+        }
     }
 
     /// 向 `target`（发现端口）发送查询，等待回复。
@@ -302,6 +396,14 @@ impl Discovery {
                 tracing::error!(%error, "discovery task failed");
             }
         }
+        if let Some(task) = self.tailscale_task.lock().await.take() {
+            task.abort();
+            if let Err(error) = task.await
+                && !error.is_cancelled()
+            {
+                tracing::error!(%error, "tailscale discovery task failed");
+            }
+        }
         self.socket.lock().unwrap_or_else(|e| e.into_inner()).take();
         self.pending.lock().unwrap_or_else(|e| e.into_inner()).clear();
         let mdns = self.mdns.lock().unwrap_or_else(|e| e.into_inner()).take();
@@ -318,6 +420,92 @@ impl Discovery {
     }
 }
 
+pub(crate) async fn query_socket(
+    socket: &UdpSocket,
+    pending: &Pending,
+    target: SocketAddr,
+    timeout: Duration,
+) -> Option<(Advert, SocketAddr)> {
+    if !target.is_ipv4() {
+        return None;
+    }
+    let nonce: [u8; 16] = rand::random();
+    let (tx, rx) = oneshot::channel();
+    pending.lock().unwrap_or_else(|e| e.into_inner()).insert(nonce, tx);
+    let pkt = encode_query(&nonce);
+    let fut = async {
+        let mut rx = rx;
+        loop {
+            let _ = socket.send_to(&pkt, target).await;
+            tokio::select! {
+                r = &mut rx => return r.ok(),
+                _ = tokio::time::sleep(Duration::from_millis(300)) => {}
+            }
+        }
+    };
+    let r = tokio::time::timeout(timeout, fut).await.ok().flatten();
+    pending.lock().unwrap_or_else(|e| e.into_inner()).remove(&nonce);
+    r
+}
+
+async fn run_tailscale(
+    tailscale: tailscale::TailscaleDiscovery,
+    discovery_port: u16,
+    socket: Arc<UdpSocket>,
+    pending: Pending,
+    extra_targets: Arc<Mutex<Vec<SocketAddr>>>,
+    out: mpsc::Sender<Sighting>,
+    mut refresh_rx: mpsc::UnboundedReceiver<()>,
+    tailscale_enabled: Arc<AtomicBool>,
+) {
+    let mut interval = tokio::time::interval(Duration::from_secs(25));
+    interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    loop {
+        tokio::select! {
+            _ = interval.tick() => {},
+            Some(()) = refresh_rx.recv() => {},
+        }
+        if !tailscale_enabled.load(Ordering::Acquire) {
+            continue;
+        }
+        let peers = match tailscale.query_status().await {
+            Ok(peers) => peers,
+            Err(e) => {
+                tracing::debug!("Tailscale status check: {e}");
+                continue;
+            }
+        };
+        if peers.is_empty() {
+            continue;
+        }
+
+        let mut new_targets = Vec::new();
+        for peer_ip in &peers {
+            new_targets.push(SocketAddr::new(IpAddr::V4(*peer_ip), discovery_port));
+        }
+
+        {
+            let mut targets = extra_targets.lock().unwrap_or_else(|e| e.into_inner());
+            for target in &new_targets {
+                if !targets.contains(target) {
+                    targets.push(*target);
+                }
+            }
+        }
+
+        for target in new_targets {
+            if let Some((advert, endpoint)) = query_socket(&socket, &pending, target, Duration::from_millis(1500)).await
+            {
+                let _ = out.try_send(Sighting {
+                    advert,
+                    addrs: vec![endpoint],
+                    source: Source::Tailscale,
+                });
+            }
+        }
+    }
+}
+
 async fn run(
     cfg: DiscoveryConfig,
     socket: Arc<UdpSocket>,
@@ -326,20 +514,21 @@ async fn run(
     pending: Pending,
     extra: Arc<Mutex<Vec<SocketAddr>>>,
     mut refresh: mpsc::UnboundedReceiver<()>,
+    pan_enabled: Arc<AtomicBool>,
 ) {
     let mut tick = tokio::time::interval(cfg.beacon_interval);
     tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     let mut buf = vec![0u8; 2048];
     loop {
         tokio::select! {
-            _ = tick.tick() => send_beacons(&cfg, &socket, &advert, &extra).await,
-            Some(()) = refresh.recv() => send_beacons(&cfg, &socket, &advert, &extra).await,
+            _ = tick.tick() => send_beacons(&cfg, &socket, &advert, &extra, pan_enabled.load(Ordering::Acquire)).await,
+            Some(()) = refresh.recv() => send_beacons(&cfg, &socket, &advert, &extra, pan_enabled.load(Ordering::Acquire)).await,
             r = socket.recv_from(&mut buf) => {
                 let Ok((n, from)) = r else {
                     // Windows 上对端端口不可达会让 recv_from 报错（WSAECONNRESET），忽略即可。
                     continue;
                 };
-                handle_packet(&buf[..n], from, &socket, &advert, &out, &pending).await;
+                handle_packet(&buf[..n], from, &socket, &advert, &out, &pending, pan_enabled.load(Ordering::Acquire)).await;
             }
         }
     }
@@ -350,6 +539,7 @@ async fn send_beacons(
     socket: &UdpSocket,
     advert: &watch::Receiver<Advert>,
     extra: &Mutex<Vec<SocketAddr>>,
+    pan_enabled: bool,
 ) {
     let Ok(pkt) = encode_beacon(&advert.borrow()) else {
         return;
@@ -357,11 +547,15 @@ async fn send_beacons(
     let mut targets: Vec<SocketAddr> = extra.lock().unwrap_or_else(|e| e.into_inner()).clone();
     if cfg.beacon {
         let bcasts: Vec<Ipv4Addr> = if cfg.bind_ip.is_unspecified() {
-            local_ipv4().into_iter().filter_map(|(_, b)| b).collect()
+            local_ipv4()
+                .into_iter()
+                .filter(|(ip, _)| pan_enabled || !pan::is_bluetooth_pan(*ip))
+                .filter_map(|(_, b)| b)
+                .collect()
         } else if let IpAddr::V4(ip) = cfg.bind_ip {
             local_ipv4()
                 .into_iter()
-                .filter(|(a, _)| *a == ip)
+                .filter(|(a, _)| *a == ip && (pan_enabled || !pan::is_bluetooth_pan(*a)))
                 .filter_map(|(_, b)| b)
                 .collect()
         } else {
@@ -389,6 +583,7 @@ async fn handle_packet(
     advert: &watch::Receiver<Advert>,
     out: &mpsc::Sender<Sighting>,
     pending: &Pending,
+    pan_enabled: bool,
 ) {
     if !from.is_ipv4() {
         return;
@@ -409,10 +604,14 @@ async fn handle_packet(
                 return;
             }
             let addr = SocketAddr::new(from.ip(), a.port);
+            let source = match from.ip() {
+                IpAddr::V4(v4) if pan_enabled && pan::is_bluetooth_pan(v4) => Source::BluetoothPan,
+                _ => Source::Beacon,
+            };
             let _ = out.try_send(Sighting {
                 advert: a,
                 addrs: vec![addr],
-                source: Source::Beacon,
+                source,
             });
         }
         Packet::Reply(a, nonce) => {
@@ -643,6 +842,7 @@ mod tests {
                 beacon_interval: Duration::from_secs(2),
                 beacon_ports: vec![],
                 mdns: MdnsMode::Off,
+                tailscale: false,
             },
             advert_rx,
             tx,
@@ -656,6 +856,73 @@ mod tests {
             endpoint,
             SocketAddr::new(Ipv4Addr::LOCALHOST.into(), advert_tx.borrow().port)
         );
+        discovery.stop().await;
+    }
+
+    #[tokio::test]
+    async fn pan_beacon_is_tagged_as_bluetooth_pan_source() {
+        let (_advert_tx, advert_rx) = watch::channel(advert());
+        let (tx, mut rx) = mpsc::channel(4);
+        let pending = Arc::default();
+        let socket = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
+        socket.set_nonblocking(true).unwrap();
+        let socket = tokio::net::UdpSocket::from_std(socket).unwrap();
+
+        let mut peer_adv = advert();
+        peer_adv.id = DeviceId([99; 32]);
+        let pkt = encode_beacon(&peer_adv).unwrap();
+
+        // From link-local 169.254.1.2 with PAN enabled: should be tagged as BluetoothPan
+        let pan_addr: SocketAddr = "169.254.1.2:47471".parse().unwrap();
+        handle_packet(&pkt, pan_addr, &socket, &advert_rx, &tx, &pending, true).await;
+        let sighting = rx.recv().await.unwrap();
+        assert_eq!(sighting.source, Source::BluetoothPan);
+        assert_eq!(
+            sighting.addrs[0],
+            SocketAddr::new("169.254.1.2".parse().unwrap(), peer_adv.port)
+        );
+
+        // From link-local 169.254.1.2 with PAN disabled: should fallback to Beacon
+        handle_packet(&pkt, pan_addr, &socket, &advert_rx, &tx, &pending, false).await;
+        let sighting_disabled = rx.recv().await.unwrap();
+        assert_eq!(sighting_disabled.source, Source::Beacon);
+
+        // From regular LAN 192.168.1.100: should be tagged as Beacon
+        let lan_addr: SocketAddr = "192.168.1.100:47471".parse().unwrap();
+        handle_packet(&pkt, lan_addr, &socket, &advert_rx, &tx, &pending, true).await;
+        let sighting_lan = rx.recv().await.unwrap();
+        assert_eq!(sighting_lan.source, Source::Beacon);
+    }
+
+    #[tokio::test]
+    async fn runtime_toggles_tailscale_and_pan() {
+        let (_advert_tx, advert_rx) = watch::channel(advert());
+        let (tx, _rx) = mpsc::channel(4);
+        let discovery = Discovery::start(
+            DiscoveryConfig {
+                bind_ip: Ipv4Addr::LOCALHOST.into(),
+                port: 0,
+                beacon: false,
+                beacon_interval: Duration::from_secs(2),
+                beacon_ports: vec![],
+                mdns: MdnsMode::Off,
+                tailscale: false,
+            },
+            advert_rx,
+            tx,
+        )
+        .await
+        .unwrap();
+
+        assert!(!discovery.is_tailscale_enabled());
+        assert!(discovery.is_bluetooth_pan_enabled());
+
+        discovery.set_tailscale(true);
+        assert!(discovery.is_tailscale_enabled());
+
+        discovery.set_bluetooth_pan(false);
+        assert!(!discovery.is_bluetooth_pan_enabled());
+
         discovery.stop().await;
     }
 }
@@ -684,6 +951,7 @@ mod unavailable_beacon_tests {
                 beacon_ports: vec![],
                 beacon_interval: Duration::from_secs(2),
                 mdns: MdnsMode::Off,
+                tailscale: false,
             },
             advert,
             out,

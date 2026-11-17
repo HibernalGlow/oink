@@ -259,6 +259,20 @@ impl ConfigModule {
     pub fn subscribe(&self) -> ConfigChanges {
         self.shared.subscribe()
     }
+    pub fn set_tailscale_discovery(&self, enabled: bool) {
+        self.send(move |owner| {
+            if let Some(d) = &owner.discovery {
+                d.set_tailscale(enabled);
+            }
+        });
+    }
+    pub fn set_bluetooth_pan_discovery(&self, enabled: bool) {
+        self.send(move |owner| {
+            if let Some(d) = &owner.discovery {
+                d.set_bluetooth_pan(enabled);
+            }
+        });
+    }
     pub fn peer_boot(&self, device: DeviceId) -> Option<Boot> {
         self.links
             .links()

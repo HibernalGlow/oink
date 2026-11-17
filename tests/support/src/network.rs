@@ -29,6 +29,7 @@ pub fn network_config_with_bind(data_dir: PathBuf, name: &str, port: u16, bind_i
         mdns: MdnsMode::Off,
         beacon: false,
         beacon_ports: Vec::new(),
+        tailscale: false,
     }
 }
 

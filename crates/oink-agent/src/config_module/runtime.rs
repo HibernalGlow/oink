@@ -269,7 +269,7 @@ pub(super) struct Owner {
     displays_observed: bool,
     display_layout_dependency: Option<(GroupId, dto::ConfigVersion)>,
     detached: detached::DetachedScreens,
-    discovery: Option<Arc<Discovery>>,
+    pub(super) discovery: Option<Arc<Discovery>>,
     advert: watch::Sender<Advert>,
     sleeping: bool,
     pub(super) layout_sink: Option<crate::diagnostics::layout::Sink>,
@@ -633,6 +633,7 @@ impl Owner {
                 beacon_interval: Duration::from_secs(2),
                 beacon_ports: config.beacon_ports,
                 mdns: config.mdns,
+                tailscale: config.tailscale,
             },
             self.advert.subscribe(),
             sightings,
@@ -1901,6 +1902,12 @@ impl Owner {
         }
         let mut seen = BTreeSet::new();
         addresses.retain(|address| seen.insert(*address));
+        // Retain candidate priority: LAN (0) > Bluetooth PAN (1) > Tailscale (2).
+        addresses.sort_by_key(|addr| match addr.ip() {
+            std::net::IpAddr::V4(ip) if oink_network::discovery::is_tailscale(ip) => 2,
+            std::net::IpAddr::V4(ip) if oink_network::discovery::is_bluetooth_pan(ip) => 1,
+            _ => 0,
+        });
         addresses
     }
     fn sighting(&mut self, sighting: Sighting) {

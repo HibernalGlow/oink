@@ -221,13 +221,19 @@ impl Owner {
             })
             .filter_map(|seen| {
                 let advert = &seen.sighting.advert;
-                let addresses = seen
+                let mut addresses = seen
                     .sighting
                     .addrs
                     .iter()
                     .copied()
                     .filter(|a| a.is_ipv4())
                     .collect::<Vec<_>>();
+                // Stable sort: LAN (0) > Bluetooth PAN (1) > Tailscale CGNAT (2)
+                addresses.sort_by_key(|addr| match addr.ip() {
+                    std::net::IpAddr::V4(ip) if oink_network::discovery::is_tailscale(ip) => 2,
+                    std::net::IpAddr::V4(ip) if oink_network::discovery::is_bluetooth_pan(ip) => 1,
+                    _ => 0,
+                });
                 let selected = *addresses.first()?;
                 let compatible = advert.protocols.iter().any(|p| p.major == v1::MAJOR)
                     && advert.identity_algorithms.iter().any(|a| a == dto::ED25519);
@@ -246,6 +252,8 @@ impl Owner {
                         oink_network::discovery::Source::Beacon => 0,
                         oink_network::discovery::Source::Mdns => 1,
                         oink_network::discovery::Source::Manual => 2,
+                        oink_network::discovery::Source::Tailscale => 3,
+                        oink_network::discovery::Source::BluetoothPan => 4,
                     },
                     identity: api::IdentityEvidence::Advertised,
                     reachable: true,

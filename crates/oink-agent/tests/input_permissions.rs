@@ -223,6 +223,7 @@ fn network_config(dir: std::path::PathBuf, name: &str, port: u16) -> oink_networ
         mdns: oink_network::MdnsMode::Off,
         beacon: false,
         beacon_ports: Vec::new(),
+        tailscale: false,
     }
 }
 

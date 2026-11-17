@@ -32,6 +32,8 @@ pub struct NetworkConfig {
     pub beacon: bool,
     /// 信标广播到哪些端口（除了本机的发现端口）。默认 47471；同机多实例时可列出其他实例的发现端口。
     pub beacon_ports: Vec<u16>,
+    /// 是否启用 Tailscale 发现。
+    pub tailscale: bool,
 }
 
 impl Default for NetworkConfig {
@@ -47,6 +49,7 @@ impl Default for NetworkConfig {
             mdns: MdnsMode::System,
             beacon: true,
             beacon_ports: vec![DEFAULT_PORT + 1],
+            tailscale: true,
         }
     }
 }

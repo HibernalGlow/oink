@@ -39,7 +39,7 @@ pub mod test_ports;
 
 pub use config::{DEFAULT_PORT, MdnsMode, NetworkConfig};
 pub use discovery::Advert as DiscoveryAdvert;
-pub use discovery::{Sighting as DiscoverySighting, Source as DiscoverySource};
+pub use discovery::{Sighting as DiscoverySighting, Source as DiscoverySource, is_bluetooth_pan, is_tailscale};
 mod low_types;
 pub use low_types::{LowFailureReason, LowOptions, LowTcpPurpose, LowUnavailable};
 
