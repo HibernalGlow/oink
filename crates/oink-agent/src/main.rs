@@ -16,7 +16,6 @@ use std::time::Duration;
 use clap::{Parser, Subcommand, ValueEnum};
 use oink_agent::api::{self, Placement, Request};
 use oink_agent::config::AgentConfig;
-#[cfg(not(windows))]
 use oink_agent::host::AgentHost;
 use oink_agent::ipc::Client;
 use oink_display::layout::Layout;
@@ -130,6 +129,11 @@ enum Cmd {
     },
     /// 总览：本机、设备组、共享状态、焦点、提醒。
     Status,
+    /// 后台服务 / LaunchAgent 管理（install / uninstall / status / start / stop）。
+    Service {
+        #[command(subcommand)]
+        cmd: oink_agent::service_manager::ServiceCmd,
+    },
     /// Quit Oink and wait for its backend, UI windows and panels to exit.
     Stop,
     /// 本组成员与附近逐设备列表；独立设备的 group 为 null。
@@ -528,11 +532,86 @@ fn run(cli: Cli) -> anyhow::Result<ExitCode> {
         }
         Cmd::Status => {
             let c = client()?;
-            print(&serde_json::json!({
-                "overview": c.call(Request::Overview)?,
-                "status": c.call(Request::Status)?,
-            }))?;
+            let hello = c.hello().ok();
+            let overview: serde_json::Value = c.call(Request::Overview)?;
+            let status_val: serde_json::Value = c.call(Request::Status)?;
+            let net_info: Option<api::NetworkInfo> = c
+                .call(Request::NetworkInfo)
+                .ok()
+                .and_then(|v| serde_json::from_value(v).ok());
+
+            let mut tailscale_detected = false;
+            let mut tailscale_addrs = Vec::new();
+            let mut pan_detected = false;
+            let mut pan_addrs = Vec::new();
+
+            if let Some(net) = &net_info {
+                for addr in &net.addresses {
+                    let ip = &addr.ip;
+                    let iface = addr.interface.to_lowercase();
+                    if iface.contains("tailscale")
+                        || (iface.contains("utun") && ip.starts_with("100."))
+                        || ip.starts_with("100.")
+                    {
+                        if let Ok(parsed) = ip.parse::<std::net::Ipv4Addr>() {
+                            let octets = parsed.octets();
+                            if octets[0] == 100 && (64..=127).contains(&octets[1]) {
+                                tailscale_detected = true;
+                                tailscale_addrs.push(ip.clone());
+                            }
+                        }
+                    }
+                    if iface.contains("bnep")
+                        || iface.contains("pan")
+                        || iface.contains("bluetooth")
+                        || ip.starts_with("169.254.")
+                    {
+                        pan_detected = true;
+                        pan_addrs.push(ip.clone());
+                    }
+                }
+            }
+
+            let peers = status_val.get("peers").and_then(|p| p.as_array());
+            let connections = peers.map_or(0, |list| {
+                list.iter()
+                    .filter(|p| p.get("state").and_then(|s| s.get("type")).and_then(|t| t.as_str()) == Some("online"))
+                    .count()
+            });
+            let active_devices = connections + 1;
+
+            let uptime_s = status_val.get("uptime_s").and_then(|u| u.as_u64()).unwrap_or(0);
+            let pid = hello.as_ref().map(|h| h.pid);
+            let version = hello
+                .as_ref()
+                .map(|h| h.version.clone())
+                .unwrap_or_else(|| env!("OINK_RELEASE_VERSION").to_string());
+
+            let mut out = serde_json::json!({
+                "pid": pid,
+                "version": version,
+                "uptime_s": uptime_s,
+                "active_devices": active_devices,
+                "connections": connections,
+                "tailscale": {
+                    "detected": tailscale_detected,
+                    "addresses": tailscale_addrs,
+                },
+                "bluetooth_pan": {
+                    "detected": pan_detected,
+                    "addresses": pan_addrs,
+                },
+                "overview": overview,
+                "status": status_val,
+            });
+
+            if let Some(net) = net_info {
+                out["network"] = serde_json::to_value(net)?;
+            }
+
+            print(&out)?;
         }
+        Cmd::Service { cmd } => oink_agent::service_manager::run(cmd)?,
         Cmd::Devices => {
             let c = client()?;
             print(&serde_json::json!({
@@ -752,9 +831,8 @@ fn hotkeys_cmd(cmd: Option<HotkeysCmd>) -> anyhow::Result<()> {
     print(&settings.hotkeys)
 }
 
-/// Run until an explicit stop, Ctrl-C, or SIGTERM.
-#[cfg(not(windows))]
-fn run_service() -> anyhow::Result<()> {
+/// Direct in-process execution of the AgentHost platform backend.
+fn run_direct_service() -> anyhow::Result<()> {
     let host = AgentHost::start_platform()?;
     let info = host.node().link_config()?.local_facts();
     cli_output::stderr(format_args!(
@@ -786,7 +864,14 @@ fn run_service() -> anyhow::Result<()> {
     output
 }
 
-/// Windows CLI owns only the wait/stop request; the SYSTEM service owns backend creation.
+/// Run until an explicit stop, Ctrl-C, or SIGTERM.
+#[cfg(not(windows))]
+fn run_service() -> anyhow::Result<()> {
+    run_direct_service()
+}
+
+/// Windows CLI tries the SYSTEM UIAccess service broker first, with graceful
+/// fallback to direct in-process user-mode execution for local development.
 #[cfg(windows)]
 fn run_service() -> anyhow::Result<()> {
     let dir = oink_foundation::paths::data_dir();
@@ -794,35 +879,44 @@ fn run_service() -> anyhow::Result<()> {
         oink_agent::instance::is_running(&dir) != Some(true),
         "Oink 后台已在运行"
     );
-    let pid = oink_winsvc::backend::start_in(&dir, &std::env::current_dir()?)?;
-    let deadline = std::time::Instant::now() + Duration::from_secs(30);
-    loop {
-        if Client::connect(&dir).and_then(|c| c.hello()).is_ok() {
-            break;
-        }
-        anyhow::ensure!(
-            std::time::Instant::now() < deadline,
-            "UIAccess 后台启动超时，请查看服务日志"
-        );
-        std::thread::sleep(Duration::from_millis(100));
-    }
-    cli_output::stderr(format_args!("Oink UIAccess 后台运行中（PID {pid}）。Ctrl-C 退出"))?;
-    tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()?
-        .block_on(async {
-            let stopped = async {
-                while oink_agent::instance::is_running(&dir) == Some(true) {
-                    tokio::time::sleep(Duration::from_millis(100)).await;
+    match oink_winsvc::backend::start_in(&dir, &std::env::current_dir()?) {
+        Ok(pid) => {
+            let deadline = std::time::Instant::now() + Duration::from_secs(30);
+            loop {
+                if Client::connect(&dir).and_then(|c| c.hello()).is_ok() {
+                    break;
                 }
-            };
-            tokio::select! { _ = tokio::signal::ctrl_c() => {}, _ = stopped => {} }
-        });
-    anyhow::ensure!(
-        oink_agent::host::stop_service(&dir, Duration::from_secs(10))?,
-        "后台退出超时"
-    );
-    Ok(())
+                anyhow::ensure!(
+                    std::time::Instant::now() < deadline,
+                    "UIAccess 后台启动超时，请查看服务日志"
+                );
+                std::thread::sleep(Duration::from_millis(100));
+            }
+            cli_output::stderr(format_args!("Oink UIAccess 后台运行中（PID {pid}）。Ctrl-C 退出"))?;
+            tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()?
+                .block_on(async {
+                    let stopped = async {
+                        while oink_agent::instance::is_running(&dir) == Some(true) {
+                            tokio::time::sleep(Duration::from_millis(100)).await;
+                        }
+                    };
+                    tokio::select! { _ = tokio::signal::ctrl_c() => {}, _ = stopped => {} }
+                });
+            anyhow::ensure!(
+                oink_agent::host::stop_service(&dir, Duration::from_secs(10))?,
+                "后台退出超时"
+            );
+            Ok(())
+        }
+        Err(err) => {
+            cli_output::stderr(format_args!(
+                "未检测到 OinkInput 系统服务（{err}），切换至开发模式（普通用户模式直接运行后台，非 UIAccess）..."
+            ))?;
+            run_direct_service()
+        }
+    }
 }
 
 fn api_u64(value: u64) -> oink_agent::device_cards::DecimalU64 {
@@ -955,6 +1049,24 @@ mod tests {
     use super::*;
 
     #[test]
+    fn service_cli_subcommands_parse_correctly() {
+        use oink_agent::service_manager::ServiceCmd;
+        for (sub, expected) in [
+            ("install", ServiceCmd::Install),
+            ("uninstall", ServiceCmd::Uninstall),
+            ("status", ServiceCmd::Status),
+            ("start", ServiceCmd::Start),
+            ("stop", ServiceCmd::Stop),
+        ] {
+            let cli = Cli::try_parse_from(["oink-agent", "service", sub]).unwrap();
+            let Cmd::Service { cmd } = cli.cmd else {
+                panic!("expected Service command");
+            };
+            assert_eq!(cmd, expected);
+        }
+    }
+
+    #[test]
     fn placeholder_pool_cli_accepts_status_on_off_without_other_controls() {
         for (arg, expected) in [("status", 0), ("on", 1), ("off", 2)] {
             let cli = Cli::try_parse_from(["oink-agent", "file-provider", "placeholder-pool", arg]).unwrap();
@@ -1069,6 +1181,7 @@ mod product_boundary {
             "call",
             "events",
             "status",
+            "service",
             "stop",
             "diagnostics",
             "file-provider",

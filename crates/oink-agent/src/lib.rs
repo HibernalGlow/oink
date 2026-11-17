@@ -62,6 +62,7 @@ use snapshot_tests::common::watchdog as test_watchdog;
 pub mod update;
 
 pub mod native_controls;
+pub mod service_manager;
 pub mod tray;
 
 #[cfg(any(windows, test))]
