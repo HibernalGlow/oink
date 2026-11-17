@@ -281,7 +281,7 @@ pub(crate) fn expand(tops: &[PathBuf]) -> (Vec<FileEntry>, ExpandStats) {
         let meta = match std::fs::metadata(top) {
             Ok(m) => m,
             Err(e) => {
-                tracing::warn!("读取 {} 失败：{e}", top.display());
+                tracing::warn!(reason = ?e.kind(), "读取顶层条目失败");
                 stats.unreadable += 1;
                 continue;
             }
@@ -327,7 +327,7 @@ fn walk(dir: &Path, rel: &str, out: &mut Vec<FileEntry>, stats: &mut ExpandStats
     let rd = match std::fs::read_dir(dir) {
         Ok(rd) => rd,
         Err(e) => {
-            tracing::warn!("列出 {} 失败：{e}", dir.display());
+            tracing::warn!(reason = ?e.kind(), "列出文件夹失败");
             stats.unreadable += 1;
             return;
         }
@@ -386,7 +386,7 @@ pub(crate) fn top_local_paths(entries: &[FileEntry]) -> Vec<PathBuf> {
         .filter(|e| !e.path.contains('/'))
         .filter_map(|e| {
             if e.local_path.is_none() {
-                tracing::warn!("文件 {} 没有本机路径，不能写成 CF_HDROP，跳过", e.path);
+                tracing::warn!("文件没有本机路径，不能写成 CF_HDROP，跳过");
             }
             e.local_path.clone()
         })

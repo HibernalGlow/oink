@@ -557,3 +557,230 @@ fn confirmed_focus_entry_is_not_replayed_on_a_later_reconnect() {
         }
     )));
 }
+
+#[test]
+fn peer_disconnect_cleans_up_held_keys_and_buttons() {
+    let mut r = router();
+    initialize(&mut r, true);
+    let scope = FocusScope {
+        members: vec![(ME, r.session), (PEER, [2; 16])],
+    };
+    r.input_message(
+        PEER,
+        Message::Control(ControlMsg::FocusEnter {
+            epoch: 2,
+            display: "screen".into(),
+            pos: Point::new(20., 20.),
+            scope: Some(scope),
+            pointer_source: Some(PEER),
+        }),
+        2,
+    );
+    r.drain_outputs();
+
+    let key = KeyCode::keyboard(4);
+    // Remote peer presses a key and multiple buttons (including mouse Back button).
+    r.input_message(
+        PEER,
+        Message::Input(InputMsg::Key {
+            code: key,
+            pressed: true,
+        }),
+        3,
+    );
+    r.input_message(
+        PEER,
+        Message::Input(InputMsg::Button {
+            button: MouseButton::Left,
+            pressed: true,
+        }),
+        4,
+    );
+    r.input_message(
+        PEER,
+        Message::Input(InputMsg::Button {
+            button: MouseButton::Back,
+            pressed: true,
+        }),
+        5,
+    );
+
+    let injected = r.drain_outputs();
+    assert!(injected.contains(&Output::Inject(InjectEvent::Key {
+        code: key,
+        pressed: true
+    })));
+    assert!(injected.contains(&Output::Inject(InjectEvent::Button {
+        button: MouseButton::Left,
+        pressed: true
+    })));
+    assert!(injected.contains(&Output::Inject(InjectEvent::Button {
+        button: MouseButton::Back,
+        pressed: true
+    })));
+    assert!(r.is_held(PEER, HeldItem::Key(key)));
+    assert!(r.is_held(PEER, HeldItem::Button(MouseButton::Left)));
+    assert!(r.is_held(PEER, HeldItem::Button(MouseButton::Back)));
+
+    // Disconnect peer -> detach_input -> peer_lost.
+    r.detach_input(PEER);
+
+    // Target must cleanly inject releases for all held items.
+    let releases = r.drain_outputs();
+    assert!(
+        releases.contains(&Output::Inject(InjectEvent::Key {
+            code: key,
+            pressed: false
+        })),
+        "target must release held keys on disconnect"
+    );
+    assert!(
+        releases.contains(&Output::Inject(InjectEvent::Button {
+            button: MouseButton::Left,
+            pressed: false
+        })),
+        "target must release left button on disconnect"
+    );
+    assert!(
+        releases.contains(&Output::Inject(InjectEvent::Button {
+            button: MouseButton::Back,
+            pressed: false
+        })),
+        "target must release side back button on disconnect"
+    );
+    assert!(!r.is_held(PEER, HeldItem::Key(key)));
+    assert!(!r.is_held(PEER, HeldItem::Button(MouseButton::Left)));
+    assert!(!r.is_held(PEER, HeldItem::Button(MouseButton::Back)));
+}
+
+#[test]
+fn peer_disconnect_marks_source_held_keys_dropped_and_reclaims_focus() {
+    let mut r = router();
+    initialize(&mut r, true);
+    let scope = FocusScope {
+        members: vec![(ME, r.session), (PEER, [2; 16])],
+    };
+    r.input_message(
+        PEER,
+        Message::Control(ControlMsg::FocusState {
+            lock_state: None,
+            epoch: 2,
+            holder: PEER,
+            scope: Some(scope),
+            session: Some([2; 16]),
+        }),
+        2,
+    );
+    r.drain_outputs();
+    assert_eq!(r.holder, PEER);
+
+    let key = KeyCode::keyboard(4);
+    // User physically presses key on source while focus is on remote peer.
+    let disposition = r.on_local_event(
+        &CapturedEvent {
+            time_us: 100,
+            physical: true,
+            source: SourceKind::Keyboard,
+            cursor: None,
+            event: InputEvent::Key {
+                code: key,
+                pressed: true,
+            },
+        },
+        100,
+    );
+    assert_eq!(disposition, Disposition::Swallow);
+    assert_eq!(r.keys.get(&key), Some(&vec![Target::Remote(PEER)]));
+
+    // Peer unexpectedly disconnects.
+    r.detach_input(PEER);
+
+    // Target is converted to Dropped, and local focus is reclaimed.
+    assert_eq!(r.keys.get(&key), Some(&vec![Target::Dropped]));
+    assert_eq!(r.holder, ME);
+
+    // When the user physically releases the key locally, it is swallowed/dropped without panic.
+    let release_disp = r.on_local_event(
+        &CapturedEvent {
+            time_us: 200,
+            physical: true,
+            source: SourceKind::Keyboard,
+            cursor: None,
+            event: InputEvent::Key {
+                code: key,
+                pressed: false,
+            },
+        },
+        200,
+    );
+    assert_eq!(release_disp, Disposition::Swallow);
+    assert!(!r.keys.contains_key(&key));
+}
+
+#[test]
+fn physical_mouse_x1_x2_side_buttons_preserve_back_and_forward() {
+    let mut r = router();
+    initialize(&mut r, true);
+    let scope = FocusScope {
+        members: vec![(ME, r.session), (PEER, [2; 16])],
+    };
+    r.input_message(
+        PEER,
+        Message::Control(ControlMsg::FocusState {
+            lock_state: None,
+            epoch: 2,
+            holder: PEER,
+            scope: Some(scope),
+            session: Some([2; 16]),
+        }),
+        2,
+    );
+    r.drain_outputs();
+    assert_eq!(r.holder, PEER);
+
+    for button in [MouseButton::Back, MouseButton::Forward] {
+        // Physical press on source.
+        let disp = r.on_local_event(
+            &CapturedEvent {
+                time_us: 100,
+                physical: true,
+                source: SourceKind::Mouse,
+                cursor: None,
+                event: InputEvent::Button { button, pressed: true },
+            },
+            100,
+        );
+        assert_eq!(disp, Disposition::Swallow);
+        let out = r.drain_outputs();
+        assert!(out.iter().any(|o| matches!(
+            o,
+            Output::Send {
+                to,
+                msg: Message::Input(InputMsg::Button { button: b, pressed: true }),
+                ..
+            } if *to == PEER && *b == button
+        )));
+
+        // Physical release on source.
+        let disp_up = r.on_local_event(
+            &CapturedEvent {
+                time_us: 200,
+                physical: true,
+                source: SourceKind::Mouse,
+                cursor: None,
+                event: InputEvent::Button { button, pressed: false },
+            },
+            200,
+        );
+        assert_eq!(disp_up, Disposition::Swallow);
+        let out_up = r.drain_outputs();
+        assert!(out_up.iter().any(|o| matches!(
+            o,
+            Output::Send {
+                to,
+                msg: Message::Input(InputMsg::Button { button: b, pressed: false }),
+                ..
+            } if *to == PEER && *b == button
+        )));
+    }
+}

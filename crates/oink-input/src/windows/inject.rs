@@ -12,6 +12,8 @@
 //! - Quicker 兼容模式（[`crate::quicker_compat`]）：远端输入注入时，鼠标按键（含拖拽的定位按下 / 松开）与
 //!   改为 `dwExtraInfo = 0`（[`untag_for_quicker`]）；移动、滚轮与键盘仍带 [`INJECT_TAG`]。
 
+use std::sync::atomic::{AtomicU64, Ordering};
+
 use oink_foundation::input::{KeyCode, MouseButton};
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     INPUT, INPUT_0, INPUT_KEYBOARD, INPUT_MOUSE, KEYBD_EVENT_FLAGS, KEYBDINPUT, KEYEVENTF_EXTENDEDKEY, KEYEVENTF_KEYUP,
@@ -172,6 +174,17 @@ pub(crate) fn wheel(units: i32, horizontal: bool) -> INPUT {
     )
 }
 
+static UNSUPPORTED_BUTTON_COUNT: AtomicU64 = AtomicU64::new(0);
+
+pub(crate) fn unsupported_button_count() -> u64 {
+    UNSUPPORTED_BUTTON_COUNT.load(Ordering::Relaxed)
+}
+
+#[cfg(all(test, debug_assertions))]
+pub(crate) fn reset_unsupported_button_count() {
+    UNSUPPORTED_BUTTON_COUNT.store(0, Ordering::Relaxed);
+}
+
 pub(crate) fn button(b: MouseButton, pressed: bool) -> Option<INPUT> {
     const XBUTTON1: i32 = 1;
     const XBUTTON2: i32 = 2;
@@ -186,7 +199,15 @@ pub(crate) fn button(b: MouseButton, pressed: bool) -> Option<INPUT> {
         (MouseButton::Back | MouseButton::Other(3), false) => (MOUSEEVENTF_XUP, XBUTTON1),
         (MouseButton::Forward | MouseButton::Other(4), true) => (MOUSEEVENTF_XDOWN, XBUTTON2),
         (MouseButton::Forward | MouseButton::Other(4), false) => (MOUSEEVENTF_XUP, XBUTTON2),
-        (MouseButton::Other(_), _) => return None,
+        (MouseButton::Other(n), _) => {
+            UNSUPPORTED_BUTTON_COUNT.fetch_add(1, Ordering::Relaxed);
+            tracing::debug!(
+                button = n,
+                pressed,
+                "unsupported Windows mouse button: exceeds native XBUTTON2 limit"
+            );
+            return None;
+        }
     };
     Some(mouse(0, 0, data, flags))
 }
@@ -214,6 +235,7 @@ pub(crate) fn untag_for_quicker(input: &mut INPUT) -> bool {
     unsafe {
         if input.r#type == INPUT_MOUSE && input.Anonymous.mi.dwFlags.0 & BUTTON_FLAGS.0 != 0 {
             input.Anonymous.mi.dwExtraInfo = 0;
+            crate::quicker_compat::record_untagged_injection();
             return true;
         }
     }
@@ -445,7 +467,12 @@ mod tests {
             data(button(MouseButton::Other(0), true).unwrap()).0,
             MOUSEEVENTF_LEFTDOWN
         );
+        reset_unsupported_button_count();
+        assert_eq!(unsupported_button_count(), 0);
+        assert!(button(MouseButton::Other(5), true).is_none());
+        assert!(button(MouseButton::Other(6), false).is_none());
         assert!(button(MouseButton::Other(7), true).is_none());
+        assert_eq!(unsupported_button_count(), 3);
     }
 
     #[test]

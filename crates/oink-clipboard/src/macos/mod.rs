@@ -20,11 +20,11 @@ mod files;
 mod gate;
 mod pasteboard;
 pub(crate) mod small_files;
-#[cfg(all(test, debug_assertions))]
+#[cfg(all(any(test, feature = "test-support"), debug_assertions))]
 mod test_pasteboard;
 mod thumbnail;
 
-#[cfg(all(test, debug_assertions))]
+#[cfg(all(target_os = "macos", any(test, feature = "test-support"), debug_assertions))]
 pub(crate) fn run_native_linked_promise_tests() {
     if std::env::args().any(|arg| arg == "--lazy-clipboard") {
         clipboard_files::run_native();

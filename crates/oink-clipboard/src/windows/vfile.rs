@@ -1534,7 +1534,7 @@ impl IStream_Impl for FileStream_Impl {
         if pstatstg.is_null() {
             return Err(E_POINTER.into());
         }
-        tracing::trace!("Stat({}) {}", grfstatflag.0, self.name);
+        tracing::trace!("Stat({}) entry={}", grfstatflag.0, self.entry);
         let current = self
             .shared
             .contents

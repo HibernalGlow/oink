@@ -7,9 +7,9 @@
 // #[test] bodies are omitted. Their fixture helpers are consequently unused.
 #![cfg_attr(test, allow(dead_code, unused_imports))]
 
-#[cfg(test)]
-fn main() {
-    #[cfg(all(target_os = "macos", debug_assertions))]
+#[doc(hidden)]
+#[cfg(all(target_os = "macos", any(test, feature = "test-support"), debug_assertions))]
+pub fn run_native_linked_promise_tests() {
     macos::run_native_linked_promise_tests();
 }
 

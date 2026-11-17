@@ -11,6 +11,7 @@ use oink_foundation::clipboard::ClipPlatform;
 use std::{
     collections::HashMap,
     process::{Command, Stdio},
+    sync::atomic::AtomicUsize,
 };
 
 const BOARD: &str = "OINK_TEST_LINKED_PROMISE_BOARD";

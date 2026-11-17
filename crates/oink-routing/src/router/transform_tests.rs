@@ -932,3 +932,127 @@ fn forwarded_replacement_local_up_also_retires_the_local_physical_observation() 
     assert!(!source.lock_escape_keys.contains(&KeyCode::LEFT_GUI));
     assert!(!source.keyboard_pointer_modifiers().contains(&KeyCode::LEFT_GUI));
 }
+
+#[test]
+fn macfeel_preset_swaps_command_and_control_between_mac_and_windows() {
+    // 1. Target is Windows, Source is macOS.
+    let mut win_target = router(Os::Windows);
+    win_target.test_connect(SOURCE, 0);
+    win_target.peers.get_mut(&SOURCE).unwrap().os = Os::MacOS;
+    win_target.set_input_transforms([(SOURCE, InputTransform::initial("macos"))].into());
+
+    // Mac user presses Left Command (LEFT_GUI). Target Windows must inject Left Control (LEFT_CTRL).
+    win_target.target_key(SOURCE, KeyCode::LEFT_GUI, true);
+    assert_eq!(keys(&mut win_target), [(KeyCode::LEFT_CTRL, true)]);
+
+    // Mac user presses 'C' while holding Command -> Ctrl+C on Windows.
+    let c_key = KeyCode::keyboard(0x06); // 'C'
+    win_target.target_key(SOURCE, c_key, true);
+    assert_eq!(keys(&mut win_target), [(c_key, true)]);
+
+    // Release 'C'.
+    win_target.target_key(SOURCE, c_key, false);
+    assert_eq!(keys(&mut win_target), [(c_key, false)]);
+
+    // Release Left Command -> Windows releases Left Control.
+    win_target.target_key(SOURCE, KeyCode::LEFT_GUI, false);
+    assert_eq!(keys(&mut win_target), [(KeyCode::LEFT_CTRL, false)]);
+
+    // Right Command <-> Right Control
+    win_target.target_key(SOURCE, KeyCode::RIGHT_GUI, true);
+    win_target.target_key(SOURCE, KeyCode::RIGHT_GUI, false);
+    assert_eq!(
+        keys(&mut win_target),
+        [(KeyCode::RIGHT_CTRL, true), (KeyCode::RIGHT_CTRL, false)]
+    );
+
+    // 2. Target is macOS, Source is Windows.
+    let mut mac_target = router(Os::MacOS);
+    mac_target.test_connect(SOURCE, 0);
+    mac_target.peers.get_mut(&SOURCE).unwrap().os = Os::Windows;
+    mac_target.set_input_transforms([(SOURCE, InputTransform::initial("windows"))].into());
+
+    // Windows user presses Left Ctrl (LEFT_CTRL). Target Mac must inject Left Command (LEFT_GUI).
+    mac_target.target_key(SOURCE, KeyCode::LEFT_CTRL, true);
+    assert_eq!(keys(&mut mac_target), [(KeyCode::LEFT_GUI, true)]);
+
+    // Release Left Ctrl -> Mac releases Left Command.
+    mac_target.target_key(SOURCE, KeyCode::LEFT_CTRL, false);
+    assert_eq!(keys(&mut mac_target), [(KeyCode::LEFT_GUI, false)]);
+
+    // Right Ctrl <-> Right Command
+    mac_target.target_key(SOURCE, KeyCode::RIGHT_CTRL, true);
+    mac_target.target_key(SOURCE, KeyCode::RIGHT_CTRL, false);
+    assert_eq!(
+        keys(&mut mac_target),
+        [(KeyCode::RIGHT_GUI, true), (KeyCode::RIGHT_GUI, false)]
+    );
+}
+
+#[test]
+fn cross_screen_modifier_edge_transition_chords_mac_cmd_to_win_ctrl() {
+    let mut mac_source = Router::new(
+        RouterConfig::new(
+            oink_foundation::session::Boot {
+                device_id: ME,
+                nonce: [1; 16],
+            },
+            "mac_local",
+            Os::MacOS,
+        ),
+        connection_tests::session_layout(ME, SOURCE),
+    );
+    mac_source.test_connect(SOURCE, 0);
+    mac_source.peers.get_mut(&SOURCE).unwrap().os = Os::Windows;
+
+    // Display setup: Mac display [0, 0, 1000, 600]
+    let display = |key: &str, bounds: Rect, is_primary| DisplayInfo {
+        key: key.into(),
+        name: key.into(),
+        bounds,
+        pixel_width: bounds.w as u32,
+        pixel_height: bounds.h as u32,
+        reference_extent: None,
+        rotation_deg: 0,
+        is_primary,
+        is_builtin: false,
+        is_virtual: false,
+    };
+    mac_source.set_local_displays(vec![display("mac_screen", Rect::new(0., 0., 1000., 600.), true)]);
+
+    // Mac user presses physical Left Command on Mac.
+    let disp = physical(&mut mac_source, KeyCode::LEFT_GUI, true);
+    assert_eq!(disp, Disposition::Pass);
+    assert!(mac_source.keys.contains_key(&KeyCode::LEFT_GUI));
+
+    // Pointer crosses screen edge into Windows peer, triggering focus handoff.
+    mac_source.hand_off(
+        ScreenPos::new(ScreenId::new(SOURCE, "screen"), Point::new(40., 50.)),
+        None,
+    );
+
+    // Verify handoff was triggered and modifier was retargeted to Windows peer!
+    let outputs = mac_source.drain_outputs();
+    assert!(
+        outputs.iter().any(|o| matches!(
+            o,
+            Output::Send {
+                to,
+                msg: Message::Input(InputMsg::Key { code: KeyCode::LEFT_GUI, pressed: true }),
+                ..
+            } if *to == SOURCE
+        )),
+        "retarget_modifiers must forward held Command to new holder"
+    );
+    assert!(
+        outputs.iter().any(|o| matches!(
+            o,
+            Output::Send {
+                to,
+                msg: Message::Input(InputMsg::Key { code: KeyCode::MENU_MASK, .. }),
+                ..
+            } if *to == SOURCE
+        )),
+        "retarget_modifiers must send MENU_MASK to Windows holder to avoid start menu popups"
+    );
+}

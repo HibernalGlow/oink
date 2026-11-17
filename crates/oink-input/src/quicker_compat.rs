@@ -23,13 +23,50 @@ use std::time::{Duration, Instant};
 pub(crate) const WINDOW: Duration = Duration::from_secs(1);
 
 static ENABLED: AtomicBool = AtomicBool::new(false);
+static UNTAGGED_INJECTIONS: AtomicU64 = AtomicU64::new(0);
+static SKIPPED_EVENTS: AtomicU64 = AtomicU64::new(0);
 
+#[allow(dead_code)]
 pub(crate) fn set_enabled(enabled: bool) {
     ENABLED.store(enabled, Ordering::Relaxed);
 }
 
 pub(crate) fn enabled() -> bool {
     ENABLED.load(Ordering::Relaxed)
+}
+
+#[allow(dead_code)]
+pub(crate) fn record_untagged_injection() {
+    UNTAGGED_INJECTIONS.fetch_add(1, Ordering::Relaxed);
+}
+
+#[allow(dead_code)]
+pub(crate) fn record_skipped() {
+    SKIPPED_EVENTS.fetch_add(1, Ordering::Relaxed);
+}
+
+/// Snapshot of Quicker compatibility diagnostics.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct QuickerDiagnostics {
+    pub enabled: bool,
+    pub window_active: bool,
+    pub untagged_injections: u64,
+    pub skipped_events: u64,
+}
+
+pub fn diagnostics() -> QuickerDiagnostics {
+    QuickerDiagnostics {
+        enabled: enabled(),
+        window_active: MOUSE.active(Instant::now()),
+        untagged_injections: UNTAGGED_INJECTIONS.load(Ordering::Relaxed),
+        skipped_events: SKIPPED_EVENTS.load(Ordering::Relaxed),
+    }
+}
+
+#[cfg(all(test, debug_assertions))]
+pub(crate) fn reset_diagnostics() {
+    UNTAGGED_INJECTIONS.store(0, Ordering::Relaxed);
+    SKIPPED_EVENTS.store(0, Ordering::Relaxed);
 }
 
 /// One injection window. `0` means never armed; otherwise the armed instant as
@@ -46,6 +83,7 @@ impl Window {
         Self(AtomicU64::new(0))
     }
 
+    #[allow(dead_code)]
     pub(crate) fn arm(&self, now: Instant) {
         // Callers pass Instant::now(); an instant before the lazily created base
         // clamps to it (only tests construct such instants).
@@ -55,6 +93,7 @@ impl Window {
     }
 
     #[cfg(all(test, debug_assertions))]
+    #[allow(dead_code)]
     pub(crate) fn clear(&self) {
         self.0.store(0, Ordering::Release);
     }
@@ -78,6 +117,7 @@ pub(crate) static MOUSE: Window = Window::new();
 /// existing path (markers commit mode transitions). Releases are never skipped,
 /// so a press passed or routed before the window always closes in Oink's held
 /// ledgers (the WeType replacement-UP pairing depends on the same rule for keys).
+#[allow(dead_code)]
 pub(crate) fn skip(window_active: bool, injected: bool, own: bool, release: bool) -> bool {
     window_active && injected && !own && !release
 }
@@ -131,5 +171,24 @@ mod tests {
         // Physical input is never affected; releases always reach the ledgers.
         assert!(!skip(true, false, false, false));
         assert!(!skip(true, true, false, true));
+    }
+
+    #[test]
+    fn diagnostics_counters_accumulate_and_report_state() {
+        reset_diagnostics();
+        set_enabled(true);
+        let diag_initial = diagnostics();
+        assert!(diag_initial.enabled);
+        assert_eq!(diag_initial.untagged_injections, 0);
+        assert_eq!(diag_initial.skipped_events, 0);
+
+        record_untagged_injection();
+        record_untagged_injection();
+        record_skipped();
+
+        let diag_updated = diagnostics();
+        assert_eq!(diag_updated.untagged_injections, 2);
+        assert_eq!(diag_updated.skipped_events, 1);
+        set_enabled(false);
     }
 }

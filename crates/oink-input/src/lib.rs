@@ -44,9 +44,8 @@ mod ordinary_motion;
 mod park_commit;
 pub mod pointer_capture;
 pub mod pointer_transition;
-#[cfg(any(windows, all(test, debug_assertions)))]
-#[cfg_attr(not(windows), allow(dead_code))]
-mod quicker_compat;
+pub mod quicker_compat;
+pub use quicker_compat::{QuickerDiagnostics, diagnostics as quicker_diagnostics};
 pub mod session_gate;
 #[cfg(any(windows, test))]
 mod source_foreground;
@@ -155,6 +154,11 @@ pub trait InputBackend: Send + Sync {
     /// Windows-local Quicker compatibility mode: remote button and keyboard
     /// injection carries `dwExtraInfo = 0`. Other platforms ignore it.
     fn set_quicker_compat(&self, _enabled: bool) {}
+
+    /// Quicker compatibility diagnostics snapshot.
+    fn quicker_diagnostics(&self) -> quicker_compat::QuickerDiagnostics {
+        quicker_compat::diagnostics()
+    }
 
     /// Atomic only: no native permission query on capture/injection threads.
     fn input_safety(&self) -> session_gate::InputSafety {

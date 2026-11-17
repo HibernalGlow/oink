@@ -133,7 +133,7 @@ impl FileUrls {
         Self::with_source_current(spec, source, current)
             .map_err(|error| ClipboardError::ContentUnavailable(content::reason(&error)))
     }
-    #[cfg(all(test, debug_assertions))]
+    #[cfg(all(any(test, feature = "test-support"), debug_assertions))]
     pub(super) fn with_source(spec: NativeSpec, source: Arc<dyn FileUrlSource>) -> io::Result<Arc<Self>> {
         Self::with_source_current(spec, source, Arc::new(|| Ok(())))
     }
@@ -294,12 +294,12 @@ impl Drop for FileUrls {
     }
 }
 
-#[cfg(all(test, debug_assertions))]
+#[cfg(all(any(test, feature = "test-support"), debug_assertions))]
 pub(super) fn run_native() {
     tests::run_native();
 }
 
-#[cfg(all(test, debug_assertions))]
+#[cfg(all(any(test, feature = "test-support"), debug_assertions))]
 mod tests {
     use super::*;
     use crate::{

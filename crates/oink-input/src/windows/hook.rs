@@ -2799,12 +2799,16 @@ fn mouse_proc_with_next(code: i32, wparam: WPARAM, lparam: LPARAM, next: impl Fn
 /// may be Oink's own untagged button event. Physical input, Oink-tagged events,
 /// transition markers and every button release keep their ordinary path.
 fn quicker_window_skips(msg: u32, info: &MSLLHOOKSTRUCT, now: Instant) -> bool {
-    crate::quicker_compat::skip(
+    let skipped = crate::quicker_compat::skip(
         crate::quicker_compat::MOUSE.active(now),
         info.flags & LLMHF_INJECTED != 0,
         inject::own_mouse_tag(info.dwExtraInfo) || is_marker(info.dwExtraInfo),
         matches!(msg, WM_LBUTTONUP | WM_RBUTTONUP | WM_MBUTTONUP | WM_XBUTTONUP),
-    )
+    );
+    if skipped {
+        crate::quicker_compat::record_skipped();
+    }
+    skipped
 }
 
 fn account_own_mouse(msg: u32, info: &MSLLHOOKSTRUCT) {

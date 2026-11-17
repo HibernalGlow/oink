@@ -598,5 +598,5 @@ pub fn decode_standard(representation: &Representation, bytes: &[u8]) -> io::Res
     Ok(vec![data])
 }
 
-#[cfg(all(test, debug_assertions))]
+#[cfg(all(any(test, feature = "test-support"), debug_assertions))]
 pub(crate) mod tests;

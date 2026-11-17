@@ -311,7 +311,7 @@ pub(crate) fn ansi(text: &str) -> io::Result<Vec<u8>> {
     }
 }
 
-#[cfg(all(test, debug_assertions))]
+#[cfg(all(any(test, feature = "test-support"), debug_assertions))]
 pub(crate) mod tests {
     use super::*;
     use crate::content::{self, Translator};

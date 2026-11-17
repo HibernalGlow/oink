@@ -12,7 +12,7 @@ use std::{
     io::{self, Write},
 };
 
-#[cfg(all(test, debug_assertions))]
+#[cfg(all(any(test, feature = "test-support"), debug_assertions))]
 pub(in crate::macos) mod linked_tests;
 
 const FILE_URL_PROMISE: &str = "com.apple.pasteboard.promised-file-url";

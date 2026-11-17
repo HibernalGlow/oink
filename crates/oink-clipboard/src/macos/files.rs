@@ -61,7 +61,7 @@ pub(crate) fn expand_with(
         let meta = match fs::symlink_metadata(root) {
             Ok(m) => m,
             Err(e) => {
-                tracing::debug!(path = %root.display(), "读不到被复制的条目：{e}");
+                tracing::debug!(reason = ?e.kind(), "读不到被复制的条目");
                 skipped.broken_links += 1;
                 continue;
             }
@@ -161,7 +161,7 @@ fn push_children(dir: &Path, rel: &str, stack: &mut Vec<(PathBuf, String)>, skip
     let rd = match fs::read_dir(dir) {
         Ok(rd) => rd,
         Err(e) => {
-            tracing::debug!(path = %dir.display(), "读不了文件夹：{e}");
+            tracing::debug!(reason = ?e.kind(), "读不了文件夹");
             skipped.unreadable += 1;
             return;
         }
