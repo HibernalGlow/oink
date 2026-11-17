@@ -93,6 +93,8 @@ pub struct RoutingSettings {
     /// 触摸板手势转发给正在操作的那台（界面「触摸板手势」开关，默认开）。
     /// 关闭时焦点在其他设备上的手势吞掉、不转发（本机也不响应）；焦点在本机时照常。不影响媒体键。
     pub forward_gestures: bool,
+    /// Extended mouse buttons (Back/Forward / X1/X2 / buttons 4 & 5) forwarding.
+    pub extended_mouse_buttons: bool,
     /// Runtime projection of the receiving owner's AcceptContacts preference.
     #[serde(skip)]
     pub accept_contacts: bool,
@@ -154,6 +156,7 @@ impl Default for RoutingSettings {
             emergency_hold_ms: DEFAULT_EMERGENCY_HOLD_MS,
             emergency_combo: true,
             forward_gestures: true,
+            extended_mouse_buttons: true,
             accept_contacts: true,
             mac_scroll_feel: true,
             touchpad_injection: true,

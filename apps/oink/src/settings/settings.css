@@ -5,17 +5,34 @@
 .setnav__search { margin: 0 2px; }
 
 .win[data-platform="win"] .setnav__search { margin-top: 8px; }
-.setnav__list { display: grid; gap: 2px; margin: 0; padding: 0; list-style: none; }
+.setnav__list { display: grid; gap: 3px; margin: 0; padding: 0; list-style: none; }
 .setnav__item {
   box-sizing: border-box; display: flex; align-items: center; gap: 12px;
-  width: 100%; height: 40px; margin: 0; padding: 0 12px 0 12px;   
+  width: 100%; height: 40px; margin: 0; padding: 0 14px 0 14px;   
   border: 0; border-radius: calc(10px * var(--ok-rk)); corner-shape: var(--ok-corner); --ok-shape: var(--ok-corner);
   background: transparent; color: var(--ok-text-2); text-align: left; cursor: pointer;
-  font: 500 14px/1.3 var(--ok-font);
-  transition: color var(--ok-dur-2) var(--ok-ease-out), background-color var(--ok-dur-2) var(--ok-ease-out), opacity var(--ok-dur-2);
+  font: 600 13.5px/1.3 var(--ok-font); letter-spacing: -0.02em;
+  transition: color var(--ok-dur-2) var(--ok-ease-out), background-color var(--ok-dur-2) var(--ok-ease-out), border-radius var(--md-spatial-fast), transform var(--md-spatial-fast), opacity var(--ok-dur-2);
 }
-@media (hover: hover) { .setnav__item:not(:disabled):hover { color: var(--ok-text); } }
-.setnav__item[aria-current] { background: var(--ok-well-hi); color: var(--ok-text); }
+@media (hover: hover) {
+  .setnav__item:not(:disabled):hover {
+    color: var(--ok-text);
+    background: var(--ok-well);
+    border-radius: 18px;
+    transform: translateX(2px);
+  }
+}
+.setnav__item[aria-current] {
+  background: var(--md-primary-container);
+  color: var(--md-on-primary-container);
+  font-weight: 750;
+  letter-spacing: -0.03em;
+  border-radius: 999px;
+}
+.setnav__item:active:not(:disabled) {
+  border-radius: 12px;
+  transform: scale(0.97);
+}
 .setnav__item[data-miss] { opacity: .38; cursor: default; }
 .setnav__icon { display: grid; place-items: center; flex: none; width: 20px; height: 20px; }
 .setnav__icon .ok-icon, .setnav__icon svg { width: 20px; height: 20px; }
@@ -55,7 +72,24 @@
 }
 .setp__inner { box-sizing: border-box; max-width: 680px; margin: 0 auto; padding: 8px 24px 40px 16px; display: grid; gap: 28px; }
 .setp__sec { display: grid; gap: 10px; min-width: 0; scroll-margin-top: 8px; }
-.setp__title { margin: 0 0 0 4px; font: 500 15px/1.3 var(--ok-font); color: var(--ok-text); }
+.setp__sec .ok-card, .setp__sec .ok-accordion {
+  border-radius: 20px;
+  box-shadow: inset 0 0 0 1px var(--ok-line), 0 2px 6px color-mix(in srgb, var(--ok-text) 3%, transparent);
+  transition: border-radius var(--md-spatial-fast), box-shadow var(--md-effects);
+}
+@media (hover: hover) {
+  .setp__sec .ok-card:hover, .setp__sec .ok-accordion:hover {
+    border-radius: 24px;
+    box-shadow: inset 0 0 0 1px var(--ok-line-2), 0 4px 12px color-mix(in srgb, var(--ok-text) 5%, transparent);
+  }
+}
+.setp .ok-switch {
+  transition: transform var(--md-spatial-fast);
+}
+.setp .ok-switch:active {
+  transform: scale(0.96);
+}
+.setp__title { margin: 0 0 0 4px; font: 750 15px/1.3 var(--ok-font); letter-spacing: -0.04em; color: var(--ok-text); }
 .setp__lead { margin: -4px 0 2px 4px; font: 450 13px/1.45 var(--ok-font); color: var(--ok-text-2); }
 /* App-specific empty content in an embedded accordion keeps the row inset. */
 .setp__acc .ok-accordion__content > .setp__note { padding: 0 var(--_inset) var(--_row); }

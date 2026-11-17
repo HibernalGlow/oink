@@ -788,6 +788,10 @@ pub(crate) fn input_settings(node: &Node) -> InputSettings {
             .filter(|h| cfg!(windows) || h.action != HotkeyAction::LockRemoteWindows)
             .collect(),
         gestures_enabled: r.forward_gestures,
+        extended_mouse_buttons: r.extended_mouse_buttons,
+        tailscale_discovery: s.tailscale_discovery,
+        bluetooth_pan_discovery: s.bluetooth_pan_discovery,
+        destroy_webview_on_close: s.destroy_webview_on_close,
         return_pointer_on_display_sleep: r.return_pointer_on_display_sleep,
         wake_displays_on_input: r.wake_displays_on_input,
         cursor_trail: r.cursor_trail,
@@ -1440,6 +1444,7 @@ impl AgentApi for Node {
             "forward_wheel_by_lines",
             "take_foreground_on_leave",
             "quicker_compat",
+            "extended_mouse_buttons",
         ] {
             if let Some(value) = local_patch.as_object_mut().and_then(|p| p.remove(key)) {
                 let routing = local_patch
@@ -1471,6 +1476,7 @@ impl AgentApi for Node {
             routing.take_foreground_on_leave = s.take_foreground_on_leave;
             routing.quicker_compat = s.quicker_compat;
             routing.forward_wheel_by_lines = s.forward_wheel_by_lines;
+            routing.extended_mouse_buttons = s.extended_mouse_buttons;
             routing.remote_scroll_speed = s.scroll.speed;
             routing.fixed_reference_display = match s.pointer.reference {
                 PointerReference::Fixed { display } => Some(display),
@@ -1489,6 +1495,9 @@ impl AgentApi for Node {
             candidate.event_frequency = s.event_frequency;
             candidate.emergency_hold_ms = emergency_hold;
             candidate.sync_unlock_others = s.sync_unlock_others;
+            candidate.tailscale_discovery = s.tailscale_discovery;
+            candidate.bluetooth_pan_discovery = s.bluetooth_pan_discovery;
+            candidate.destroy_webview_on_close = s.destroy_webview_on_close;
             candidate.screen_preferences.device_gain = s.device_gain;
             candidate.speed_mode = match s.pointer.scaling {
                 PointerScaling::Physical => SpeedMode::Physical,
@@ -1498,6 +1507,8 @@ impl AgentApi for Node {
                 candidate.hotkeys = Some(hotkeys);
             }
         })?;
+        self.set_tailscale_discovery(s.tailscale_discovery);
+        self.set_bluetooth_pan_discovery(s.bluetooth_pan_discovery);
         drop(_gate);
         drop(_profiles);
         if patch.value().get("gap_travel").is_some() {

@@ -3,7 +3,7 @@ import { Icon } from 'oink-ui';
 import type { ReactNode } from 'react';
 import type { Platform } from '../window/DesktopWindow';
 import { SHORTCUTS } from './Shortcuts';
-export type SectionId = 'general' | 'appearance' | 'layout' | 'input' | 'clipboard' | 'audio' | 'shortcuts' | 'tools' | 'permissions' | 'diagnostics';
+export type SectionId = 'general' | 'appearance' | 'layout' | 'input' | 'clipboard' | 'audio' | 'network' | 'shortcuts' | 'tools' | 'permissions' | 'diagnostics';
 type Text = string | ((p: Platform) => string);
 export interface ItemMeta {
     id: string;
@@ -38,6 +38,9 @@ const ClipboardIcon = () => (<Icon>
 const SpeakerIcon = () => (<Icon>
     <path d="M3 7.6h2.6L9.4 4.4v11.2L5.6 12.4H3z"/>
     <path d="M12.6 7.2a3.6 3.6 0 0 1 0 5.6M14.8 5a6.6 6.6 0 0 1 0 10"/>
+  </Icon>);
+const NetworkIcon = () => (<Icon>
+    <path d="M3 8a12 12 0 0 1 14 0M5.5 11.5a8.5 8.5 0 0 1 9 0M8 15a4.5 4.5 0 0 1 4 0M10 17.5h.01"/>
   </Icon>);
 const PulseIcon = () => <Icon><path d="M2.5 10.5h3.2l2-5 3.4 9 2-4h4.4"/></Icon>;
 export const SECTIONS: SectionMeta[] = [
@@ -90,6 +93,7 @@ export const SECTIONS: SectionMeta[] = [
                 }, get keywords() { return tr('版本 更新 升级 检查'); } },
             { id: 'updates', get label() { return tr('自动检查更新'); }, get desc() { return tr('在后台定时检查新版本并提示升级'); }, get keywords() { return tr('版本 更新 升级 检查 自动 后台 软件更新'); } },
             { id: 'updateChannel', get label() { return tr('更新频道'); }, get desc() { return tr('测试版会更早收到新版本，可能不够稳定'); }, get keywords() { return tr('频道 更新 测试 beta 正式 稳定'); } },
+            { id: 'destroyWebViewOnClose', only: 'mac', get label() { return tr('关闭窗口时释放 WebView'); }, get desc() { return tr('关闭设置窗口后销毁 WebView 内存，并在无窗口闲置 60 秒后自动退出 UI 辅助进程以减少内存占用'); }, get keywords() { return tr('WebView 内存 释放 闲置 后台'); } },
             { id: 'about', get label() {
                     return tr('关于 Oink');
                 }, get desc() {
@@ -171,6 +175,7 @@ export const SECTIONS: SectionMeta[] = [
                     return tr('在使用本机鼠标时，反转滚轮滚动方向');
                 }, get keywords() { return tr('滚动 方向 自然滚动'); } },
             { id: 'forwardWheelByLines', get label() { return tr('按行转发滚轮事件'); }, get desc() { return tr('开启时，被控机一次滚动的行数与本机一致；关闭时，受被控机自身滚动设置影响。如部分应用滚动出现异常，请关闭此开关。'); }, get keywords() { return tr('滚动 方向 自然滚动'); } },
+            { id: 'extendedMouseButtons', get label() { return tr('扩展鼠标侧键 (6–8 键)'); }, get desc() { return tr('捕获并转发 5 键以上的高级鼠标侧键并提供诊断遥测'); }, get keywords() { return tr('鼠标 侧键 6键 7键 8键 扩展'); } },
             { id: 'touchpadInject', get label() {
                     return tr('注入原生触摸板事件');
                 }, get desc() {
@@ -224,6 +229,27 @@ export const SECTIONS: SectionMeta[] = [
                 }, get keywords() { return tr('转发 声音 本机'); } },
             { id: 'virtualMicrophone', get label() { return tr('虚拟麦克风'); }, get keywords() { return tr('麦克风'); } },
             { id: 'microphoneInput', get label() { return tr('共享的麦克风'); }, get desc() { return tr('选择本机共享到其他设备的麦克风'); }, get keywords() { return tr('麦克风 输入 录音 来源 系统默认'); } },
+        ],
+    },
+    {
+        id: 'network',
+        get title() {
+            return tr('网络与发现');
+        },
+        icon: <NetworkIcon />,
+        items: [
+            {
+                id: 'tailscaleDiscovery',
+                get label() { return tr('Tailscale 自动发现'); },
+                get desc() { return tr('通过 Tailscale 状态检测在线设备并建立直连，支持跨网段自动发现'); },
+                get keywords() { return tr('Tailscale VPN 跨网段 发现 虚拟网卡 100.64'); },
+            },
+            {
+                id: 'bluetoothPanDiscovery',
+                get label() { return tr('蓝牙 PAN 与直连网卡发现'); },
+                get desc() { return tr('允许通过蓝牙个人局域网 (PAN) 或直连网段（169.254.x.x）发现与连接设备'); },
+                get keywords() { return tr('蓝牙 PAN 直连 网线 网卡 169.254 BNEP'); },
+            },
         ],
     },
     {

@@ -221,6 +221,10 @@ export interface InputSettings {
   cursor_trail_duration_ms: number;
   /** Group setting, stored and shared with the layout. */
   gap_travel: boolean;
+  extended_mouse_buttons?: boolean;
+  tailscale_discovery?: boolean;
+  bluetooth_pan_discovery?: boolean;
+  destroy_webview_on_close?: boolean;
 }
 
 export type CacheCategory = "clipboard_files" | "drag_files" | "provider_catalog" | "provider_materialized" | "provider_temporary" | "delivered_files";

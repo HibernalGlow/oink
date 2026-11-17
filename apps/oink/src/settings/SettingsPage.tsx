@@ -315,6 +315,10 @@ export function SettingsPage({ open, platform, api, capsIme, query, jump, onActi
             case 'clipReceive':
             case 'clipSend':
             case 'clipDedupe':
+            case 'tailscaleDiscovery':
+            case 'bluetoothPanDiscovery':
+            case 'extendedMouseButtons':
+            case 'destroyWebViewOnClose':
                 return sw(item.id);
             case 'touchpadInject': return {
                 desc: !contactsAvailable ? <>{text(item.desc, platform)} · {tr('原生触摸板注入暂不可用')}</> : undefined,

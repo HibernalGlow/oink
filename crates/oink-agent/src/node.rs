@@ -537,6 +537,18 @@ impl Node {
         self.inner.group.get().cloned().ok_or(api::ApiError::NetworkStopped)
     }
 
+    pub fn set_tailscale_discovery(&self, enabled: bool) {
+        if let Ok(config) = self.link_config() {
+            config.set_tailscale_discovery(enabled);
+        }
+    }
+
+    pub fn set_bluetooth_pan_discovery(&self, enabled: bool) {
+        if let Ok(config) = self.link_config() {
+            config.set_bluetooth_pan_discovery(enabled);
+        }
+    }
+
     pub fn input_thread(&self) -> api::ApiResult<Arc<crate::threads::input::InputThread>> {
         self.inner.input.get().cloned().ok_or_else(sharing_not_started)
     }

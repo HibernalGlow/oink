@@ -71,6 +71,10 @@ export interface Prefs {
     logMaxMb: string;
     diagnostics: boolean;
     crashReports: boolean;
+    tailscaleDiscovery: boolean;
+    bluetoothPanDiscovery: boolean;
+    extendedMouseButtons: boolean;
+    destroyWebViewOnClose: boolean;
     permissions: Record<Exclude<PermissionId, 'accessibility' | 'input'>, boolean>;
 }
 export const DEFAULT_PREFS: Prefs = {
@@ -111,6 +115,10 @@ export const DEFAULT_PREFS: Prefs = {
     logMaxMb: '1024',
     diagnostics: true,
     crashReports: false,
+    tailscaleDiscovery: true,
+    bluetoothPanDiscovery: true,
+    extendedMouseButtons: true,
+    destroyWebViewOnClose: true,
     permissions: { network: true, files: false, audio: true },
 };
 export type PrefsApi = {

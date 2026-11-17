@@ -111,6 +111,9 @@ impl Node {
             .group
             .set(group.clone())
             .map_err(|_| anyhow::anyhow!("configuration already started"))?;
+        let s = self.settings();
+        group.set_tailscale_discovery(s.tailscale_discovery);
+        group.set_bluetooth_pan_discovery(s.bluetooth_pan_discovery);
         // Initial inputs are published before the input owner takes its first turn.
         // The module retains startup state and broadcasts later changes itself.
         self.publish_local_options();

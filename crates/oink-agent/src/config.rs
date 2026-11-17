@@ -66,6 +66,9 @@ pub struct Settings {
     pub emergency_hold_ms: EmergencyHoldMs,
     /// 同步解锁其它设备: device-local, never replicated; default off.
     pub sync_unlock_others: bool,
+    pub tailscale_discovery: bool,
+    pub bluetooth_pan_discovery: bool,
+    pub destroy_webview_on_close: bool,
     #[serde(skip)]
     pub clipboard_enabled: bool,
     #[serde(skip)]
@@ -115,6 +118,9 @@ impl Default for Settings {
             paste_as_file: true,
             emergency_hold_ms: EmergencyHoldMs::default(),
             sync_unlock_others: false,
+            tailscale_discovery: true,
+            bluetooth_pan_discovery: true,
+            destroy_webview_on_close: true,
             clipboard_enabled: true,
             screen_shared: true,
             screen_preferences: ScreenPreferences::default(),

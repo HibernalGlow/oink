@@ -2132,7 +2132,10 @@ impl Router {
                 self.dnd.press_origin = self.pointer.clone();
             }
             if let Target::Remote(d) = t {
-                self.send(d, Message::Input(InputMsg::Button { button, pressed }));
+                let is_extended = matches!(button, MouseButton::Back | MouseButton::Forward | MouseButton::Other(_));
+                if !is_extended || self.cfg.settings.extended_mouse_buttons {
+                    self.send(d, Message::Input(InputMsg::Button { button, pressed }));
+                }
                 return Disposition::Swallow;
             }
             Disposition::Pass
@@ -2160,7 +2163,10 @@ impl Router {
         match t {
             Target::Local => true,
             Target::Remote(d) => {
-                self.send(d, Message::Input(InputMsg::Button { button, pressed: false }));
+                let is_extended = matches!(button, MouseButton::Back | MouseButton::Forward | MouseButton::Other(_));
+                if !is_extended || self.cfg.settings.extended_mouse_buttons {
+                    self.send(d, Message::Input(InputMsg::Button { button, pressed: false }));
+                }
                 false
             }
             Target::LocalInjected => {

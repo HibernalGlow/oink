@@ -1075,6 +1075,18 @@ pub struct InputSettings {
     /// 触摸板手势转发给正在操作的那台（`RoutingSettings::forward_gestures`）：目标是 Mac 时重放，
     /// 是 Windows 时优先原生触点（由组设置控制），否则映射为快捷键。关闭时控制其他设备期间的手势被忽略。
     pub gestures_enabled: bool,
+    /// Extended mouse buttons (Back/Forward / X1/X2 / buttons 4 & 5) forwarding.
+    #[serde(default = "default_true")]
+    pub extended_mouse_buttons: bool,
+    /// Tailscale peer discovery over Tailscale CGNAT IP interfaces.
+    #[serde(default = "default_true")]
+    pub tailscale_discovery: bool,
+    /// Bluetooth PAN and link-local peer discovery.
+    #[serde(default = "default_true")]
+    pub bluetooth_pan_discovery: bool,
+    /// Whether to destroy the WebView window when user closes the window.
+    #[serde(default = "default_true")]
+    pub destroy_webview_on_close: bool,
     #[serde(default = "default_return_pointer_on_display_sleep")]
     pub return_pointer_on_display_sleep: bool,
     /// Respond to group user activity by waking displays.
@@ -3211,6 +3223,10 @@ fn test_input_settings() -> InputSettings {
         },
         hotkeys: Vec::new(),
         gestures_enabled: true,
+        extended_mouse_buttons: true,
+        tailscale_discovery: true,
+        bluetooth_pan_discovery: true,
+        destroy_webview_on_close: true,
         return_pointer_on_display_sleep: true,
         wake_displays_on_input: true,
         cursor_trail: true,
@@ -3239,6 +3255,20 @@ mod input_validation_tests {
                 enabled
             );
         }
+    }
+    #[test]
+    fn new_m1_m4_input_settings_default_true() {
+        let mut value = serde_json::to_value(test_input_settings()).unwrap();
+        let obj = value.as_object_mut().unwrap();
+        obj.remove("extended_mouse_buttons");
+        obj.remove("tailscale_discovery");
+        obj.remove("bluetooth_pan_discovery");
+        obj.remove("destroy_webview_on_close");
+        let deserialized = serde_json::from_value::<InputSettings>(value.clone()).unwrap();
+        assert!(deserialized.extended_mouse_buttons);
+        assert!(deserialized.tailscale_discovery);
+        assert!(deserialized.bluetooth_pan_discovery);
+        assert!(deserialized.destroy_webview_on_close);
     }
     #[test]
     fn trail_duration_bounds_are_checked_without_an_api_mock() {
